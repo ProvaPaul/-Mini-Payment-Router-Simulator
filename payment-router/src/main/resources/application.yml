@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------------------
+# Payment Router - application configuration
+#
+# Spring Boot reads this file automatically from src/main/resources.
+# YAML is used instead of .properties because it nests: related settings sit
+# together visually, which matters once we add DFSP URLs and fee rules.
+#
+# Every value here can be overridden at runtime WITHOUT rebuilding, by an
+# environment variable using SCREAMING_SNAKE_CASE
+# (e.g. SERVER_PORT=9090, ROUTER_ENVIRONMENT=docker).
+# That is exactly how Step 9 will point this same image at the DFSP containers.
+# ---------------------------------------------------------------------------
+
+server:
+  # The port embedded Tomcat listens on. 8080 per the Step 1 port map.
+  port: 8080
+
+spring:
+  application:
+    # Appears in log output and in Actuator. Also the default name used by tracing tools.
+    name: payment-router
+
+  jackson:
+    serialization:
+      # WITHOUT this, Jackson writes java.time.Instant as a raw epoch number
+      # (1757606400.123456789), which is unreadable and awkward for JavaScript.
+      # With it, we get ISO-8601: "2026-09-11T20:00:00Z" - which `new Date(...)`
+      # in the React frontend parses directly.
+      write-dates-as-timestamps: false
+    # Do not emit keys whose value is null. Keeps responses small and unambiguous.
+    default-property-inclusion: non_null
+
+# -----------------------------------------------------------------------------
+# Our own settings. Bound to the RouterProperties record by @ConfigurationProperties.
+# Anything under a custom prefix like this is application config, not Spring config.
+# -----------------------------------------------------------------------------
+router:
+  service-name: payment-router
+  version: 0.1.0-step2
+  environment: local
+
+# -----------------------------------------------------------------------------
+# Spring Boot Actuator.
+# By default Actuator exposes almost nothing over HTTP - a safe default we keep.
+# We deliberately expose ONLY `health`. Endpoints such as `env` and `configprops`
+# would publish configuration to anyone who can reach the port.
+# -----------------------------------------------------------------------------
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      # Show the individual checks (disk space, ping) rather than a bare {"status":"UP"}.
+      # Fine for a simulator; in a real system this is information disclosure, so you would
+      # set `when-authorized` instead.
+      show-details: always
+
+logging:
+  level:
+    # Our own code logs at INFO. Change to DEBUG to see the log.debug(...) lines.
+    com.misl.paymentrouter: INFO
+    # Spring itself stays at INFO; set to DEBUG only when diagnosing startup problems.
+    org.springframework: INFO
+  pattern:
+    # Console pattern: time, level, logger (shortened to 40 chars), message.
+    # Step 7 replaces this with logback-spring.xml, adding a rolling FILE appender
+    # and the correlation ID.
+    console: "%d{HH:mm:ss.SSS} %-5level %logger{40} - %msg%n"

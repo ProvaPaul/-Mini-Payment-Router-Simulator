@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    pom.xml = "Project Object Model".
+
+    This single file tells Maven three things:
+      1. WHAT this project is        (groupId / artifactId / version)
+      2. WHAT it depends on          (<dependencies>)
+      3. HOW to build and package it (<build><plugins>)
+
+    Maven then downloads every dependency (and each dependency's own dependencies,
+    transitively) from Maven Central into ~/.m2/repository, compiles the source,
+    runs the tests, and produces a runnable .jar.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        The PARENT POM.
+
+        spring-boot-starter-parent is Spring Boot's "curated bill of materials".
+        Its single most valuable job: it pins a compatible version for ~200 libraries
+        (Spring, Jackson, Logback, Tomcat, JUnit, Mockito, SLF4J...).
+
+        That is why every <dependency> below has NO <version> tag — the parent already
+        chose a version that is known to work with every other version it chose.
+        This is how Spring Boot eliminates "dependency hell"/"JAR hell".
+    -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.16</version>
+        <relativePath/> <!-- empty = look the parent up in Maven Central, not on disk -->
+    </parent>
+
+    <!-- Coordinates: how this artifact is uniquely identified in a repository. -->
+    <groupId>com.misl</groupId>
+    <artifactId>payment-router</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>payment-router</name>
+    <description>Mini Payment Router Simulator - routes quotes and transfers between dummy DFSPs</description>
+
+    <properties>
+        <!-- Compile for Java 21. The parent reads this property and configures the compiler plugin. -->
+        <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+
+        <!--
+            STARTER 1: spring-boot-starter-web
+
+            A "starter" is not a library. It is an empty POM whose only content is a list of
+            other dependencies. Adding this ONE line puts all of these on the classpath:
+              - spring-webmvc   -> @RestController, @GetMapping, request routing
+              - spring-core/beans/context -> the dependency-injection container itself
+              - Tomcat (embedded) -> the HTTP server, running INSIDE our jar
+              - Jackson         -> Java object <-> JSON conversion, applied automatically
+              - Logback + SLF4J -> logging (we configure file output in Step 7)
+
+            It also triggers AUTO-CONFIGURATION: Spring Boot sees Tomcat + Spring MVC on the
+            classpath and concludes "this is a web application", then wires up a servlet
+            container, a DispatcherServlet, and JSON message converters with no XML from us.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!--
+            STARTER 2: spring-boot-starter-actuator
+
+            Adds production-support endpoints under /actuator. We expose only /actuator/health.
+
+            Why now and not later? Requirement 5 of this step is a health check, and Actuator is
+            Spring's standard answer to it: it reports on the application's real internals
+            (disk space, and later our DFSP connectors) rather than just returning a hard-coded
+            "OK". In Step 9 it becomes the target of the Docker HEALTHCHECK so Compose can wait
+            for a service to be genuinely ready.
+
+            This is the ONLY dependency here that looks slightly ahead of the current step.
+            If you would rather drop it, delete this block and the `management:` section in
+            application.yml - our own /api/health endpoint keeps working untouched.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!--
+            STARTER 3: spring-boot-starter-test  (scope=test)
+
+            scope=test means: available when compiling/running tests, and NOT packaged into
+            the shipped jar. Brings JUnit 5, AssertJ, Mockito, and MockMvc (which lets us call
+            a controller over a simulated HTTP layer without starting a real server).
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+            NOT here on purpose (each arrives in the step that needs it):
+              spring-boot-starter-validation -> Step 4 (@Valid, @NotNull)
+            And never here at all: any database driver, JPA, Kafka, Redis, Lombok.
+        -->
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                spring-boot-maven-plugin repackages the ordinary jar produced by Maven into an
+                executable "fat jar": our classes + every dependency jar + a small launcher.
+
+                That is what makes `java -jar payment-router.jar` work with no external server
+                installed - and it is precisely what makes the Docker image in Step 9 trivial.
+                It also provides the `mvn spring-boot:run` goal we use during development.
+            -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
