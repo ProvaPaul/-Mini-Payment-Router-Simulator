@@ -1,46 +1,99 @@
 package com.misl.paymentrouter.config;
 
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.util.Map;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import com.misl.paymentrouter.model.Dfsp;
+import com.misl.paymentrouter.model.FeeType;
 
 /**
  * Typed, validated-at-startup view of the {@code router.*} block in application.yml.
  *
- * <p>Spring binds YAML keys to record components by name, converting kebab-case to camelCase:
- * <pre>
- *   router:
- *     service-name: payment-router   ->  serviceName
- *     version: 0.1.0-step2           ->  version
- *     environment: local             ->  environment
- * </pre>
+ * <p>Spring binds YAML keys to record components by name, converting kebab-case to camelCase
+ * ({@code service-name} to {@code serviceName}), and does it recursively for nested records
+ * and maps.
  *
- * <p><b>Why a class instead of sprinkling {@code @Value("${router.version}")} around?</b>
+ * <p><b>Why do the fee rules live in configuration rather than in Java?</b>
  * <ul>
- *   <li><b>One place to look.</b> Every setting this service accepts is listed here, so the
- *       configuration surface is discoverable instead of scattered across the codebase.</li>
- *   <li><b>Type safety.</b> A typo in a property name fails loudly, and values are converted
- *       to real types. {@code @Value} injects a raw String wherever you happen to write it.</li>
- *   <li><b>Testability.</b> A test can construct {@code new RouterProperties("a","b","c")}
- *       directly - no Spring context, no property files.</li>
+ *   <li><b>Pricing changes far more often than code does.</b> A fee rate is a business
+ *       parameter, not program logic. Changing 1.85% to 1.95% should not require a
+ *       recompile, a code review and a redeployment of a new artifact.</li>
+ *   <li><b>The same image behaves differently per environment.</b> Step 9 will run this exact
+ *       jar with different environment variables. {@code ROUTER_QUOTE_ROUTERFEE=0} gives you a
+ *       zero-fee test deployment with no rebuild.</li>
+ *   <li><b>It makes the rules visible.</b> Anyone can read application.yml and see the entire
+ *       pricing model on one screen, without reading Java.</li>
+ *   <li><b>It makes tests honest.</b> {@code FeeCalculatorTest} constructs its own
+ *       {@code RouterProperties} in Java, so the tests state their own inputs instead of
+ *       silently depending on whatever production config happens to say today.</li>
  * </ul>
  *
- * <p><b>Why a record?</b> Java 21 records give us an immutable class with a constructor,
- * accessors, {@code equals}, {@code hashCode} and {@code toString} in one line. Spring Boot
- * supports constructor binding for records out of the box. Configuration should never change
- * while the app is running, so immutability is exactly the right guarantee here - and it is
- * why we do not need Lombok.
- *
- * <p>This record is discovered by {@code @ConfigurationPropertiesScan} on the main class.
+ * @param serviceName human-readable name of this service, echoed by the health endpoint
+ * @param version     build/version label
+ * @param environment which environment this instance believes it is in
+ * @param currency    ISO code all money in this deployment is denominated in
+ * @param quote       settings governing quote creation
+ * @param providers   per-DFSP fee rules, keyed by the {@link Dfsp} enum
  */
 @ConfigurationProperties(prefix = "router")
 public record RouterProperties(
 
-        /** Human-readable name of this service, echoed by the health endpoint. */
         String serviceName,
-
-        /** Build/version label, useful for confirming which build is actually deployed. */
         String version,
+        String environment,
 
-        /** Which environment this instance believes it is running in (local, docker, ...). */
-        String environment
+        /**
+         * Single currency for the whole deployment. This simulator does no FX, so rather than
+         * accept a currency per request and then have to reject any value but one, we fix it
+         * here and report it in every response. A real router would take it per request and
+         * hold a rate table.
+         */
+        String currency,
+
+        QuoteSettings quote,
+
+        Map<Dfsp, ProviderSettings> providers
 ) {
+
+    /**
+     * Settings that apply to every quote regardless of provider.
+     *
+     * @param routerFee flat switching fee this router charges, on top of the provider's fee
+     * @param ttl       how long a quote stays valid. Spring parses "5m", "30s", "PT5M" into a
+     *                  {@link Duration} automatically - so the YAML stays readable and we never
+     *                  have to remember whether a bare number meant seconds or milliseconds.
+     */
+    public record QuoteSettings(
+            BigDecimal routerFee,
+            Duration ttl
+    ) {
+    }
+
+    /**
+     * One provider's pricing rules.
+     *
+     * <p>Fields not relevant to the chosen {@link FeeType} are simply absent from the YAML and
+     * arrive as {@code null}: a FLAT provider has no percentage, and a PERCENTAGE provider need
+     * not set bounds. {@code FeeCalculator} only reads the fields its branch requires, and
+     * treats null bounds as "unbounded".
+     *
+     * @param displayName human-friendly name ("AlphaPay"); the enum constant stays the stable id
+     * @param feeType     which pricing model this provider uses
+     * @param percentage  percent of the amount, e.g. 1.85 means 1.85% (PERCENTAGE only)
+     * @param flatFee     fixed charge per transfer (FLAT only)
+     * @param minFee      floor applied after the percentage; null means no floor
+     * @param maxFee      cap applied after the percentage; null means no cap
+     */
+    public record ProviderSettings(
+            String displayName,
+            FeeType feeType,
+            BigDecimal percentage,
+            BigDecimal flatFee,
+            BigDecimal minFee,
+            BigDecimal maxFee
+    ) {
+    }
 }

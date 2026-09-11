@@ -3,11 +3,11 @@
 #
 # Spring Boot reads this file automatically from src/main/resources.
 # YAML is used instead of .properties because it nests: related settings sit
-# together visually, which matters once we add DFSP URLs and fee rules.
+# together visually, which matters now that fee rules have arrived.
 #
 # Every value here can be overridden at runtime WITHOUT rebuilding, by an
 # environment variable using SCREAMING_SNAKE_CASE
-# (e.g. SERVER_PORT=9090, ROUTER_ENVIRONMENT=docker).
+# (e.g. SERVER_PORT=9090, ROUTER_QUOTE_ROUTERFEE=0).
 # That is exactly how Step 9 will point this same image at the DFSP containers.
 # ---------------------------------------------------------------------------
 
@@ -36,8 +36,57 @@ spring:
 # -----------------------------------------------------------------------------
 router:
   service-name: payment-router
-  version: 0.1.0-step2
+  version: 0.1.0-step3
   environment: local
+
+  # Single currency for the whole deployment. This simulator does no FX.
+  currency: BDT
+
+  quote:
+    # The router's own flat switching fee, charged on top of the provider's fee.
+    # This is what the hub earns for providing interoperability.
+    router-fee: 5.00
+
+    # How long a quoted price is honoured. Spring parses "5m" into a java.time.Duration,
+    # so the unit is written down rather than remembered.
+    #
+    # WHY a quote expires at all: a quote is a price PROMISE. Fees and balances change.
+    # An eternal quote would let someone hold today's price forever and spend it next month.
+    # Five minutes is long enough for a person to read the fee and click Confirm, and short
+    # enough that we can demonstrate expiry in a test.
+    ttl: 5m
+
+  # ---------------------------------------------------------------------------
+  # PER-PROVIDER FEE RULES  (the documented assumption for this simulator)
+  #
+  # Keys must match the constants in the Dfsp enum.
+  #
+  # The two providers charge in deliberately DIFFERENT ways. That is the point:
+  # if both priced identically, the frontend could compute the fee itself and a
+  # quote API would be pointless. Because they differ, the price depends on the
+  # DIRECTION of the transfer, and only the router can work it out.
+  #
+  # These numbers are invented for the simulator. They are shaped after how real
+  # mobile-money providers price transfers, but they are not anyone's real tariff.
+  # ---------------------------------------------------------------------------
+  providers:
+
+    # bKash analogy: a percentage of the amount, with a floor and a ceiling.
+    # Percentage pricing scales with risk and value, and the cap stops large
+    # transfers becoming absurdly expensive.
+    DFSP_A:
+      display-name: AlphaPay
+      fee-type: PERCENTAGE
+      percentage: 1.85       # 1.85% of the amount
+      min-fee: 5.00          # never charge less than this
+      max-fee: 50.00         # never charge more than this
+
+    # Nagad analogy: one flat charge, whatever the amount.
+    # Simple to advertise; cheap for big transfers, poor value for small ones.
+    DFSP_B:
+      display-name: BetaCash
+      fee-type: FLAT
+      flat-fee: 15.00
 
 # -----------------------------------------------------------------------------
 # Spring Boot Actuator.

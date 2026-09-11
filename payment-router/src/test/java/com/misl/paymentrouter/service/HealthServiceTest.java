@@ -28,8 +28,13 @@ import com.misl.paymentrouter.dto.HealthResponse;
  */
 class HealthServiceTest {
 
+    // HealthService only reads serviceName/version/environment, so the quote and provider
+    // settings are irrelevant here and are left null. Passing them explicitly is the price of
+    // a record's canonical constructor - and it is a price worth paying: when RouterProperties
+    // grew in Step 3, the COMPILER pointed at every construction site instead of silently
+    // leaving new fields null at runtime.
     private static final RouterProperties PROPS =
-            new RouterProperties("payment-router", "0.1.0-step2", "test");
+            new RouterProperties("payment-router", "0.1.0-step2", "test", "BDT", null, null);
 
     @Test
     @DisplayName("reports UP and echoes the configured service identity")
